@@ -1,0 +1,66 @@
+name: Daily SOAP Notes Extractor
+
+on:
+  schedule:
+    # Run at 11:00 AM Pacific Time (18:00 UTC) on weekdays
+    # Note: GitHub Actions uses UTC time
+    - cron: '0 18 * * 1-5'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  extract-soap-notes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create service account key file
+        run: echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}' > service-account-key.json
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          GOOGLE_SERVICE_ACCOUNT_KEY_PATH=service-account-key.json
+          SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}
+          SHEET_NAME=${{ secrets.SHEET_NAME }}
+          DATE_COLUMN=A
+          CLIENT_NAME_COLUMN=F
+          SOAP_NOTES_COLUMN=P
+          TRIGGER_COLUMN=Q
+          EOF
+
+      - name: Run SOAP notes extraction
+        run: node index.js
+
+      - name: Process unsigned documents
+        run: node process-unsigned.js
+
+      - name: Download signed documents
+        run: node download-and-trash-signed.js
+        continue-on-error: true
+
+      - name: Upload extracted PDFs as artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extracted-pdfs-${{ github.run_number }}
+          path: downloaded_pdfs/
+          retention-days: 7
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          rm -f service-account-key.json
+          rm -f .env
