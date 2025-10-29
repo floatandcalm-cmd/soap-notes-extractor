@@ -1,0 +1,27 @@
+# Sensitive files - DO NOT COMMIT
+.env
+service-account-key.json
+token.json
+
+# Logs
+*.log
+
+# Downloaded PDFs (contain client data)
+downloaded_pdfs/
+
+# Excel files with client data
+*.xlsx
+
+# Node modules
+node_modules/
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+
+# JSON data files with client info
+*data.json
+soap-notes-report.json
