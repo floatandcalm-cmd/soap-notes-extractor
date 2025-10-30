@@ -184,24 +184,27 @@ class SoapNotesExtractor {
 
   async searchPDFByClientName(clientName) {
     try {
-      // First, try exact search - but make it more specific to avoid partial matches
+      // Search in entire Google Drive (including subfolders) for PDFs matching client name
       // Split the client name to search for both parts
       const nameParts = clientName.split(' ');
       let exactQuery = '';
-      
+
       if (nameParts.length >= 2) {
         // Search for files containing both first and last name
         const firstName = nameParts[0].trim();
         const lastName = nameParts[nameParts.length - 1].trim();
-        exactQuery = `name contains '${firstName}' and name contains '${lastName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document')`;
+        exactQuery = `name contains '${firstName}' and name contains '${lastName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document') and trashed=false`;
       } else {
         // Fallback to original search for single names
-        exactQuery = `name contains '${clientName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document')`;
+        exactQuery = `name contains '${clientName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document') and trashed=false`;
       }
-      
+
+      // Search entire drive (not just specific folder) - includes all subfolders
       const exactResponse = await this.drive.files.list({
         q: exactQuery,
         fields: 'files(id, name)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true
       });
       
       // If exact search finds results, filter them to ensure they actually match properly
@@ -589,10 +592,24 @@ class SoapNotesExtractor {
     const therapistName = rowData[3]; // Column D (0-indexed)
     const clientName = rowData[5]; // Column F (0-indexed)
     const existingSoapNote = rowData[15]; // Column P (0-indexed)
-    
+
     // Skip if no date or client name, or if SOAP note already exists
     if (!date || !clientName || existingSoapNote) {
       return;
+    }
+
+    // Only process rows from the last 60 days (skip old appointments)
+    try {
+      const appointmentDate = new Date(date);
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+      if (appointmentDate < sixtyDaysAgo) {
+        // Skip silently - too old
+        return;
+      }
+    } catch (err) {
+      // If date parsing fails, continue anyway (better to process than skip)
     }
     
     // Skip if no actual date in claim column - means client didn't show up
