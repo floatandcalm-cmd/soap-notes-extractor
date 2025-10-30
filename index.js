@@ -233,13 +233,19 @@ class SoapNotesExtractor {
         }
       }
       
+      // Fuzzy matching disabled - only use exact matches
+      console.log(`No exact matches for "${clientName}". Fuzzy matching is disabled.`);
+      console.log(`Please rename the PDF in Google Drive to match: "${clientName}"`);
+      return []; // Return empty array instead of trying fuzzy matching
+
+      /* FUZZY MATCHING CODE DISABLED - Uncomment to re-enable
       // If no exact matches, try STRICT fuzzy matching with minimum similarity threshold
       console.log(`No exact matches for "${clientName}", trying STRICT fuzzy matching...`);
-      
+
       // Search for all PDFs and filter with strict fuzzy matching
       let allFiles = [];
       let pageToken = null;
-      
+
       do {
         const allResponse = await this.drive.files.list({
           q: `(mimeType='application/pdf' or mimeType='application/vnd.google-apps.document')`,
@@ -259,8 +265,9 @@ class SoapNotesExtractor {
       const normalizedClientNameNoSuffix = this.normalize(clientNameNoSuffix);
       const fuzzyMatches = [];
       
-      // Minimum similarity threshold for matching (0.85 = 85% similarity required)
-      const MIN_SIMILARITY_THRESHOLD = 0.85;
+      // Minimum similarity threshold for matching (0.90 = 90% similarity required)
+      // Increased from 0.85 to reduce false positives
+      const MIN_SIMILARITY_THRESHOLD = 0.90;
       
       if (allFiles.length > 0) {
         for (const file of allFiles) {
@@ -348,7 +355,8 @@ class SoapNotesExtractor {
         ...match,
         isFuzzyMatch: true
       }));
-      
+      END OF FUZZY MATCHING CODE */
+
     } catch (error) {
       console.error('Error searching for PDF:', error);
       throw error;

@@ -544,15 +544,21 @@ class DocumentProcessor {
         const nameWithoutExt = pdfFile.replace('.pdf', '');
         let patientName = '';
 
-        // Try to parse standard format first
-        const standardMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+        // Match patterns like: FirstName_LastName_M_D_YY or FirstName_LastName_M_D_YYYY
+        // Handles optional timestamps: FirstName_LastName_M_D_YYYY__H_MM_AM
+        const dateMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{2,4})/);
 
-        if (standardMatch) {
-          patientName = standardMatch[1].replace(/_/g, ' ');
+        if (dateMatch) {
+          // Extract everything before the date pattern as the full name
+          patientName = dateMatch[1].replace(/_/g, ' ');
         } else {
-          // If standard format fails, extract first word as name
+          // Fallback: If no date pattern, take first two parts as first and last name
           const parts = nameWithoutExt.split('_');
-          patientName = parts[0];
+          if (parts.length >= 2) {
+            patientName = `${parts[0]} ${parts[1]}`;
+          } else {
+            patientName = parts[0];
+          }
         }
 
         console.log(`Patient name extracted: "${patientName}"`);
@@ -661,15 +667,21 @@ class DocumentProcessor {
         const nameWithoutExt = pdfFile.replace('.pdf', '');
         let patientName = '';
 
-        // Try to parse standard format first
-        const standardMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+        // Match patterns like: FirstName_LastName_M_D_YY or FirstName_LastName_M_D_YYYY
+        // Handles optional timestamps: FirstName_LastName_M_D_YYYY__H_MM_AM
+        const dateMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{2,4})/);
 
-        if (standardMatch) {
-          patientName = standardMatch[1].replace(/_/g, ' ');
+        if (dateMatch) {
+          // Extract everything before the date pattern as the full name
+          patientName = dateMatch[1].replace(/_/g, ' ');
         } else {
-          // If standard format fails, extract first word as name
+          // Fallback: If no date pattern, take first two parts as first and last name
           const parts = nameWithoutExt.split('_');
-          patientName = parts[0];
+          if (parts.length >= 2) {
+            patientName = `${parts[0]} ${parts[1]}`;
+          } else {
+            patientName = parts[0];
+          }
         }
 
         console.log(`Patient name extracted: "${patientName}"`);
