@@ -33,6 +33,7 @@ jobs:
         run: |
           cat > .env << EOF
           GOOGLE_SERVICE_ACCOUNT_KEY_PATH=service-account-key.json
+          DROPBOX_ACCESS_TOKEN=${{ secrets.DROPBOX_ACCESS_TOKEN }}
           SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}
           SHEET_NAME=${{ secrets.SHEET_NAME }}
           DATE_COLUMN=A

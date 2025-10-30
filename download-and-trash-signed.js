@@ -2,6 +2,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const { Dropbox } = require('dropbox');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const SCOPES = [
@@ -11,6 +12,14 @@ const SCOPES = [
 
 class DocumentProcessor {
   constructor() {
+    // Initialize Dropbox client if token is available
+    if (process.env.DROPBOX_ACCESS_TOKEN) {
+      this.dropbox = new Dropbox({ accessToken: process.env.DROPBOX_ACCESS_TOKEN });
+      console.log('Dropbox API initialized');
+    } else {
+      console.log('No Dropbox token found - will use local file system');
+    }
+
     // Prefer service account if configured; fall back to OAuth2 token.json
     if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
       try {
@@ -261,49 +270,110 @@ class DocumentProcessor {
   async moveToDropbox() {
     try {
       const downloadDir = path.join(__dirname, 'downloaded_pdfs');
-      const dropboxDir = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Soap Notes';
-      
+
       if (!fs.existsSync(downloadDir)) {
         console.log('No download directory found');
         return;
       }
-      
-      if (!fs.existsSync(dropboxDir)) {
-        console.error('Dropbox soap notes folder not found:', dropboxDir);
-        return;
-      }
-      
+
       const files = fs.readdirSync(downloadDir);
       const pdfFiles = files.filter(file => file.endsWith('.pdf'));
-      
-      let movedCount = 0;
-      
-      for (const file of pdfFiles) {
-        const sourcePath = path.join(downloadDir, file);
-        const destPath = path.join(dropboxDir, file);
-        
-        try {
-          // Check if file already exists in Dropbox
-          if (fs.existsSync(destPath)) {
-            console.log(`⚠️  File already exists in Dropbox: ${file}`);
-            // Remove from local downloads since it's already in Dropbox
-            fs.unlinkSync(sourcePath);
-          } else {
-            // Move file to Dropbox
-            fs.renameSync(sourcePath, destPath);
-            console.log(`✅ Moved to Dropbox: ${file}`);
-            movedCount++;
-          }
-        } catch (error) {
-          console.error(`❌ Error moving ${file}:`, error.message);
-        }
+
+      if (pdfFiles.length === 0) {
+        console.log('No PDF files to upload to Dropbox');
+        return;
       }
-      
-      console.log(`📦 Total files moved to Dropbox: ${movedCount}`);
-      
+
+      // Use Dropbox API if available, otherwise use local file system
+      if (this.dropbox) {
+        await this.moveToDropboxAPI(pdfFiles, downloadDir);
+      } else {
+        await this.moveToDropboxLocal(pdfFiles, downloadDir);
+      }
+
     } catch (error) {
       console.error('Error moving files to Dropbox:', error);
     }
+  }
+
+  async moveToDropboxAPI(pdfFiles, downloadDir) {
+    const dropboxPath = '/Soap Notes';
+    let movedCount = 0;
+
+    for (const file of pdfFiles) {
+      const sourcePath = path.join(downloadDir, file);
+      const dropboxFilePath = `${dropboxPath}/${file}`;
+
+      try {
+        // Check if file already exists in Dropbox
+        try {
+          await this.dropbox.filesGetMetadata({ path: dropboxFilePath });
+          console.log(`⚠️  File already exists in Dropbox: ${file}`);
+          // Remove from local downloads since it's already in Dropbox
+          fs.unlinkSync(sourcePath);
+          continue;
+        } catch (error) {
+          // File doesn't exist, proceed with upload
+          if (error.status !== 409) {
+            throw error;
+          }
+        }
+
+        // Upload file to Dropbox
+        const fileContent = fs.readFileSync(sourcePath);
+        await this.dropbox.filesUpload({
+          path: dropboxFilePath,
+          contents: fileContent,
+          mode: 'add',
+          autorename: false
+        });
+
+        console.log(`✅ Uploaded to Dropbox: ${file}`);
+        movedCount++;
+
+        // Remove local file after successful upload
+        fs.unlinkSync(sourcePath);
+
+      } catch (error) {
+        console.error(`❌ Error uploading ${file}:`, error.message);
+      }
+    }
+
+    console.log(`📦 Total files uploaded to Dropbox: ${movedCount}`);
+  }
+
+  async moveToDropboxLocal(pdfFiles, downloadDir) {
+    const dropboxDir = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Soap Notes';
+
+    if (!fs.existsSync(dropboxDir)) {
+      console.error('Dropbox soap notes folder not found:', dropboxDir);
+      return;
+    }
+
+    let movedCount = 0;
+
+    for (const file of pdfFiles) {
+      const sourcePath = path.join(downloadDir, file);
+      const destPath = path.join(dropboxDir, file);
+
+      try {
+        // Check if file already exists in Dropbox
+        if (fs.existsSync(destPath)) {
+          console.log(`⚠️  File already exists in Dropbox: ${file}`);
+          // Remove from local downloads since it's already in Dropbox
+          fs.unlinkSync(sourcePath);
+        } else {
+          // Move file to Dropbox
+          fs.renameSync(sourcePath, destPath);
+          console.log(`✅ Moved to Dropbox: ${file}`);
+          movedCount++;
+        }
+      } catch (error) {
+        console.error(`❌ Error moving ${file}:`, error.message);
+      }
+    }
+
+    console.log(`📦 Total files moved to Dropbox: ${movedCount}`);
   }
 
   async createExcelList() {
@@ -413,130 +483,258 @@ class DocumentProcessor {
   async organizeIntoPatientFolders() {
     try {
       console.log('Running organization into patient folders...');
-      
-      // Define Dropbox paths
-      const soapNotesFolder = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Soap Notes';
-      const veteransSoapFolder = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Veterans soap';
-      
-      // Check if folders exist
-      if (!fs.existsSync(soapNotesFolder)) {
-        console.log(`SOAP notes folder not found: ${soapNotesFolder}`);
-        return;
+
+      // Use Dropbox API if available, otherwise use local file system
+      if (this.dropbox) {
+        await this.organizeIntoPatientFoldersAPI();
+      } else {
+        await this.organizeIntoPatientFoldersLocal();
       }
-      
-      if (!fs.existsSync(veteransSoapFolder)) {
-        console.log(`Veterans SOAP folder not found: ${veteransSoapFolder}`);
-        return;
-      }
-      
-      // Get all PDF files from soap notes folder
-      const files = fs.readdirSync(soapNotesFolder);
-      const pdfFiles = files.filter(file => file.endsWith('.pdf'));
-      
-      if (pdfFiles.length === 0) {
-        console.log('No PDF files found in soap notes folder to organize');
-        return;
-      }
-      
-      console.log(`Found ${pdfFiles.length} PDF files to organize`);
-      
-      // Get all patient folders from veterans soap folder
-      const veteransFolders = fs.readdirSync(veteransSoapFolder, { withFileTypes: true })
-        .filter(dirent => dirent.isDirectory())
-        .map(dirent => dirent.name);
-      
-      console.log(`Found ${veteransFolders.length} patient folders in veterans soap`);
-      
-      let processed = 0;
-      let errors = 0;
-      
-      // Process each PDF file
-      for (const pdfFile of pdfFiles) {
-        try {
-          console.log(`Processing: ${pdfFile}`);
-          
-          // Extract patient name from filename
-          const nameWithoutExt = pdfFile.replace('.pdf', '');
-          let patientName = '';
-          
-          // Try to parse standard format first
-          const standardMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
-          
-          if (standardMatch) {
-            patientName = standardMatch[1].replace(/_/g, ' ');
-          } else {
-            // If standard format fails, extract first word as name
-            const parts = nameWithoutExt.split('_');
-            patientName = parts[0];
-          }
-          
-          console.log(`Patient name extracted: "${patientName}"`);
-          
-          // Find matching folder(s) - use word boundaries to avoid partial matches
-          const matchingFolders = veteransFolders.filter(folder => {
-            const folderLower = folder.toLowerCase();
-            const patientLower = patientName.toLowerCase();
-            
-            // First try exact match
-            if (folderLower === patientLower) return true;
-            
-            // Then try word boundary matches (avoid "ryan" matching "maryanne")
-            const words = patientLower.split(' ');
-            return words.every(word => {
-              const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-              return regex.test(folderLower);
-            });
-          });
-          
-          if (matchingFolders.length > 0) {
-            console.log(`Found ${matchingFolders.length} matching folders:`, matchingFolders.join(', '));
-            
-            // Use the first matching folder
-            const targetFolder = matchingFolders[0];
-            console.log(`Target folder: ${targetFolder}`);
-            
-            const sourcePath = path.join(soapNotesFolder, pdfFile);
-            const destPath = path.join(veteransSoapFolder, targetFolder, pdfFile);
-            
-            console.log(`Moving to: ${path.join(veteransSoapFolder, targetFolder)}`);
-            
-            // Move the file
-            fs.renameSync(sourcePath, destPath);
-            console.log(`✅ Successfully moved: ${pdfFile}`);
-            processed++;
-            
-          } else {
-            // Create new folder for patient
-            console.log(`📁 No folder found for: ${patientName} - creating new folder`);
-            const newFolderPath = path.join(veteransSoapFolder, patientName);
-            
-            if (!fs.existsSync(newFolderPath)) {
-              fs.mkdirSync(newFolderPath);
-              console.log(`✅ Created folder: ${patientName}`);
-            }
-            
-            const sourcePath = path.join(soapNotesFolder, pdfFile);
-            const destPath = path.join(newFolderPath, pdfFile);
-            
-            console.log(`Moving to newly created folder: ${patientName}`);
-            fs.renameSync(sourcePath, destPath);
-            console.log(`✅ Successfully moved: ${pdfFile}`);
-            processed++;
-          }
-          
-        } catch (error) {
-          console.error(`❌ Error processing ${pdfFile}:`, error.message);
-          errors++;
-        }
-      }
-      
-      console.log(`\n=== ORGANIZATION COMPLETE ===`);
-      console.log(`✅ Successfully processed: ${processed} files`);
-      console.log(`❌ Errors: ${errors} files`);
-      
+
     } catch (error) {
       console.error('Error organizing into patient folders:', error);
     }
+  }
+
+  async organizeIntoPatientFoldersAPI() {
+    const soapNotesPath = '/Soap Notes';
+    const veteransSoapPath = '/Veterans soap';
+
+    // Get all PDF files from soap notes folder
+    let pdfFiles = [];
+    try {
+      const result = await this.dropbox.filesListFolder({ path: soapNotesPath });
+      pdfFiles = result.result.entries
+        .filter(entry => entry['.tag'] === 'file' && entry.name.endsWith('.pdf'))
+        .map(entry => entry.name);
+    } catch (error) {
+      console.log('No PDF files found in Soap Notes folder or folder does not exist');
+      return;
+    }
+
+    if (pdfFiles.length === 0) {
+      console.log('No PDF files found in soap notes folder to organize');
+      return;
+    }
+
+    console.log(`Found ${pdfFiles.length} PDF files to organize`);
+
+    // Get all patient folders from veterans soap folder
+    let veteransFolders = [];
+    try {
+      const result = await this.dropbox.filesListFolder({ path: veteransSoapPath });
+      veteransFolders = result.result.entries
+        .filter(entry => entry['.tag'] === 'folder')
+        .map(entry => entry.name);
+    } catch (error) {
+      console.log('Veterans soap folder not found - will create as needed');
+    }
+
+    console.log(`Found ${veteransFolders.length} patient folders in veterans soap`);
+
+    let processed = 0;
+    let errors = 0;
+
+    // Process each PDF file
+    for (const pdfFile of pdfFiles) {
+      try {
+        console.log(`Processing: ${pdfFile}`);
+
+        // Extract patient name from filename
+        const nameWithoutExt = pdfFile.replace('.pdf', '');
+        let patientName = '';
+
+        // Try to parse standard format first
+        const standardMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+
+        if (standardMatch) {
+          patientName = standardMatch[1].replace(/_/g, ' ');
+        } else {
+          // If standard format fails, extract first word as name
+          const parts = nameWithoutExt.split('_');
+          patientName = parts[0];
+        }
+
+        console.log(`Patient name extracted: "${patientName}"`);
+
+        // Find matching folder(s)
+        const matchingFolders = veteransFolders.filter(folder => {
+          const folderLower = folder.toLowerCase();
+          const patientLower = patientName.toLowerCase();
+
+          if (folderLower === patientLower) return true;
+
+          const words = patientLower.split(' ');
+          return words.every(word => {
+            const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return regex.test(folderLower);
+          });
+        });
+
+        let targetFolder;
+        if (matchingFolders.length > 0) {
+          targetFolder = matchingFolders[0];
+          console.log(`Found matching folder: ${targetFolder}`);
+        } else {
+          // Create new folder for patient
+          console.log(`📁 No folder found for: ${patientName} - creating new folder`);
+          targetFolder = patientName;
+
+          try {
+            await this.dropbox.filesCreateFolderV2({ path: `${veteransSoapPath}/${targetFolder}` });
+            console.log(`✅ Created folder: ${targetFolder}`);
+            veteransFolders.push(targetFolder);
+          } catch (error) {
+            if (error.error?.error['.tag'] !== 'path' || error.error?.error?.path['.tag'] !== 'conflict') {
+              throw error;
+            }
+            console.log(`Folder already exists: ${targetFolder}`);
+          }
+        }
+
+        // Move the file
+        const sourcePath = `${soapNotesPath}/${pdfFile}`;
+        const destPath = `${veteransSoapPath}/${targetFolder}/${pdfFile}`;
+
+        await this.dropbox.filesMoveV2({
+          from_path: sourcePath,
+          to_path: destPath,
+          autorename: false
+        });
+
+        console.log(`✅ Successfully moved: ${pdfFile} to ${targetFolder}`);
+        processed++;
+
+      } catch (error) {
+        console.error(`❌ Error processing ${pdfFile}:`, error.message);
+        errors++;
+      }
+    }
+
+    console.log(`\n=== ORGANIZATION COMPLETE ===`);
+    console.log(`✅ Successfully processed: ${processed} files`);
+    console.log(`❌ Errors: ${errors} files`);
+  }
+
+  async organizeIntoPatientFoldersLocal() {
+    const soapNotesFolder = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Soap Notes';
+    const veteransSoapFolder = '/Users/liligutierrez/Dropbox/Floatandcalm Team Folder/Veterans soap';
+
+    // Check if folders exist
+    if (!fs.existsSync(soapNotesFolder)) {
+      console.log(`SOAP notes folder not found: ${soapNotesFolder}`);
+      return;
+    }
+
+    if (!fs.existsSync(veteransSoapFolder)) {
+      console.log(`Veterans SOAP folder not found: ${veteransSoapFolder}`);
+      return;
+    }
+
+    // Get all PDF files from soap notes folder
+    const files = fs.readdirSync(soapNotesFolder);
+    const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+
+    if (pdfFiles.length === 0) {
+      console.log('No PDF files found in soap notes folder to organize');
+      return;
+    }
+
+    console.log(`Found ${pdfFiles.length} PDF files to organize`);
+
+    // Get all patient folders from veterans soap folder
+    const veteransFolders = fs.readdirSync(veteransSoapFolder, { withFileTypes: true })
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+
+    console.log(`Found ${veteransFolders.length} patient folders in veterans soap`);
+
+    let processed = 0;
+    let errors = 0;
+
+    // Process each PDF file
+    for (const pdfFile of pdfFiles) {
+      try {
+        console.log(`Processing: ${pdfFile}`);
+
+        // Extract patient name from filename
+        const nameWithoutExt = pdfFile.replace('.pdf', '');
+        let patientName = '';
+
+        // Try to parse standard format first
+        const standardMatch = nameWithoutExt.match(/^(.+?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+
+        if (standardMatch) {
+          patientName = standardMatch[1].replace(/_/g, ' ');
+        } else {
+          // If standard format fails, extract first word as name
+          const parts = nameWithoutExt.split('_');
+          patientName = parts[0];
+        }
+
+        console.log(`Patient name extracted: "${patientName}"`);
+
+        // Find matching folder(s) - use word boundaries to avoid partial matches
+        const matchingFolders = veteransFolders.filter(folder => {
+          const folderLower = folder.toLowerCase();
+          const patientLower = patientName.toLowerCase();
+
+          // First try exact match
+          if (folderLower === patientLower) return true;
+
+          // Then try word boundary matches (avoid "ryan" matching "maryanne")
+          const words = patientLower.split(' ');
+          return words.every(word => {
+            const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return regex.test(folderLower);
+          });
+        });
+
+        if (matchingFolders.length > 0) {
+          console.log(`Found ${matchingFolders.length} matching folders:`, matchingFolders.join(', '));
+
+          // Use the first matching folder
+          const targetFolder = matchingFolders[0];
+          console.log(`Target folder: ${targetFolder}`);
+
+          const sourcePath = path.join(soapNotesFolder, pdfFile);
+          const destPath = path.join(veteransSoapFolder, targetFolder, pdfFile);
+
+          console.log(`Moving to: ${path.join(veteransSoapFolder, targetFolder)}`);
+
+          // Move the file
+          fs.renameSync(sourcePath, destPath);
+          console.log(`✅ Successfully moved: ${pdfFile}`);
+          processed++;
+
+        } else {
+          // Create new folder for patient
+          console.log(`📁 No folder found for: ${patientName} - creating new folder`);
+          const newFolderPath = path.join(veteransSoapFolder, patientName);
+
+          if (!fs.existsSync(newFolderPath)) {
+            fs.mkdirSync(newFolderPath);
+            console.log(`✅ Created folder: ${patientName}`);
+          }
+
+          const sourcePath = path.join(soapNotesFolder, pdfFile);
+          const destPath = path.join(newFolderPath, pdfFile);
+
+          console.log(`Moving to newly created folder: ${patientName}`);
+          fs.renameSync(sourcePath, destPath);
+          console.log(`✅ Successfully moved: ${pdfFile}`);
+          processed++;
+        }
+
+      } catch (error) {
+        console.error(`❌ Error processing ${pdfFile}:`, error.message);
+        errors++;
+      }
+    }
+
+    console.log(`\n=== ORGANIZATION COMPLETE ===`);
+    console.log(`✅ Successfully processed: ${processed} files`);
+    console.log(`❌ Errors: ${errors} files`);
   }
 }
 

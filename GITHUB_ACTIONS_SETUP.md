@@ -2,25 +2,20 @@
 
 This guide will help you set up GitHub Actions to run your SOAP notes extractor automatically in the cloud.
 
-## ⚠️ Important Limitation
+## ✅ Dropbox Integration
 
-**Dropbox Integration**: The current workflow does NOT upload files to Dropbox because GitHub Actions runs in the cloud and doesn't have access to your local Dropbox folder.
+**Dropbox Integration**: The workflow now uses the Dropbox API to upload files directly to your Dropbox account in the cloud!
 
-### What WILL run in GitHub Actions:
+### What runs in GitHub Actions:
 - ✅ Extract SOAP notes from Google Drive PDFs
 - ✅ Update Google Sheets with extracted notes
 - ✅ Process unsigned documents and add therapist signatures
-- ✅ Download signed PDFs (saved as GitHub artifacts, not Dropbox)
+- ✅ Download signed PDFs
+- ✅ Upload PDFs to Dropbox via API
+- ✅ Organize PDFs into patient folders in Dropbox
+- ✅ Create Excel lists of Dropbox files
 
-### What WON'T run in GitHub Actions:
-- ❌ Moving files to your local Dropbox folder
-- ❌ Organizing PDFs into patient folders in Dropbox
-- ❌ Creating Excel lists in Dropbox
-
-### Solutions:
-1. **Keep Dropbox operations local**: Keep your LaunchAgent running for Dropbox operations only
-2. **Use Dropbox API**: Modify the code to use Dropbox API instead of local file system (requires code changes)
-3. **Manual downloads**: Download PDFs from GitHub Actions artifacts and move them manually
+Everything is fully automated in the cloud - no laptop required!
 
 ---
 
