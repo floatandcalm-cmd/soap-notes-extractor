@@ -40,6 +40,11 @@ jobs:
           CLIENT_NAME_COLUMN=F
           SOAP_NOTES_COLUMN=P
           TRIGGER_COLUMN=Q
+          EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT=${{ secrets.EMAIL_PORT }}
+          EMAIL_USER=${{ secrets.EMAIL_USER }}
+          EMAIL_PASS=${{ secrets.EMAIL_PASS }}
+          EMAIL_TO=${{ secrets.EMAIL_TO }}
           EOF
 
       - name: Run SOAP notes extraction
