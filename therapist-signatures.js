@@ -1,4 +1,6 @@
 const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const SCOPES = [
@@ -32,20 +34,44 @@ const THERAPIST_MAPPING = {
 
 class TherapistSignatureProcessor {
   constructor() {
+    // Prefer service account if configured; fall back to OAuth2 token.json
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+      try {
+        let credentials;
+        if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
+          const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+          const fullPath = keyPath.startsWith('/') ? keyPath : path.join(__dirname, keyPath);
+          credentials = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+        } else {
+          credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+        }
+        this.authClient = new google.auth.GoogleAuth({ credentials, scopes: SCOPES });
+        this.docs = google.docs({ version: 'v1', auth: this.authClient });
+        this.drive = google.drive({ version: 'v3', auth: this.authClient });
+        console.log('Using Service Account authentication');
+        return;
+      } catch (err) {
+        console.log('Service account not usable, falling back to OAuth2:', err.message);
+      }
+    }
+
+    // Fall back to OAuth2
     this.oAuth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
-    
+
     this.docs = google.docs({ version: 'v1', auth: this.oAuth2Client });
     this.drive = google.drive({ version: 'v3', auth: this.oAuth2Client });
   }
 
   async authorize() {
-    // Use the same authorization as the SOAP notes extractor
+    // If using service account, nothing to do
+    if (this.authClient) return;
+
+    // Use OAuth2 token.json
     try {
-      const fs = require('fs');
       const token = fs.readFileSync('token.json');
       this.oAuth2Client.setCredentials(JSON.parse(token));
       return;
