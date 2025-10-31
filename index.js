@@ -520,38 +520,45 @@ class SoapNotesExtractor {
     
     for (const comment of comments) {
       const commentDate = new Date(comment.createdTime);
-      
+
       console.log(`Comment date: ${commentDate.toLocaleDateString('en-US')}, Content preview: ${comment.content.substring(0, 100)}...`);
-      
-      // Method 1: Check if comment creation date matches target date (exact date comparison)
-      if (commentDate.getFullYear() === y && 
-          commentDate.getMonth() + 1 === m && 
-          commentDate.getDate() === d) {
-        console.log(`✅ MATCH FOUND: Comment creation date matches session date`);
-        return comment.content;
-      }
-      
-      // Method 2: Search for date patterns in comment content (case-insensitive)
+
       const contentLower = comment.content.toLowerCase();
+
+      // Method 1 (PRIORITY): Search for date patterns in comment content first
+      // This is most accurate - the date in the SOAP note text itself
       for (const pattern of patterns) {
         if (contentLower.includes(pattern.toLowerCase())) {
           console.log(`✅ MATCH FOUND: Comment content mentions date pattern: ${pattern}`);
           return comment.content;
         }
       }
-      
-      // Method 3: More flexible search - look for any occurrence of the date components
+
+      // Method 2: More flexible search - look for any occurrence of the date components
       // This catches cases like "CS 6/6/25" where there might be extra text around it
       const flexiblePatterns = [
         `${m}/${d}/${String(y).slice(-2)}`,
         `${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${String(y).slice(-2)}`,
       ];
-      
+
       for (const pattern of flexiblePatterns) {
         if (contentLower.indexOf(pattern) !== -1) {
           console.log(`✅ MATCH FOUND: Flexible search found date pattern: ${pattern}`);
           return comment.content;
         }
+      }
+    }
+
+    // Method 3 (FALLBACK): Check if comment creation date matches target date
+    // Only use this as last resort since multiple comments may be created same day
+    for (const comment of comments) {
+      const commentDate = new Date(comment.createdTime);
+
+      if (commentDate.getFullYear() === y &&
+          commentDate.getMonth() + 1 === m &&
+          commentDate.getDate() === d) {
+        console.log(`✅ MATCH FOUND (fallback): Comment creation date matches session date`);
+        return comment.content;
       }
     }
     
