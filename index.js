@@ -185,27 +185,55 @@ class SoapNotesExtractor {
   async searchPDFByClientName(clientName) {
     try {
       // Search in entire Google Drive (including subfolders) for PDFs matching client name
-      // Split the client name to search for both parts
+      // Split the client name to search for both parts (case-insensitive)
       const nameParts = clientName.split(' ');
-      let exactQuery = '';
+      let queries = [];
 
       if (nameParts.length >= 2) {
         // Search for files containing both first and last name
+        // Try multiple variations to handle case sensitivity issues
         const firstName = nameParts[0].trim();
         const lastName = nameParts[nameParts.length - 1].trim();
-        exactQuery = `name contains '${firstName}' and name contains '${lastName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document') and trashed=false`;
+
+        // Build query for files containing both first and last name (any case)
+        queries.push(`name contains '${firstName}' and name contains '${lastName}'`);
+        queries.push(`name contains '${firstName.toLowerCase()}' and name contains '${lastName.toLowerCase()}'`);
+        queries.push(`name contains '${firstName.toUpperCase()}' and name contains '${lastName.toUpperCase()}'`);
       } else {
-        // Fallback to original search for single names
-        exactQuery = `name contains '${clientName}' and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document') and trashed=false`;
+        // Fallback to search for single names
+        queries.push(`name contains '${clientName}'`);
+        queries.push(`name contains '${clientName.toLowerCase()}'`);
+        queries.push(`name contains '${clientName.toUpperCase()}'`);
       }
 
-      // Search entire drive (not just specific folder) - includes all subfolders
-      const exactResponse = await this.drive.files.list({
-        q: exactQuery,
-        fields: 'files(id, name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true
-      });
+      // Try each query variation and collect all results
+      let allResults = [];
+      for (const nameQuery of queries) {
+        const exactQuery = `${nameQuery} and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.document') and trashed=false`;
+
+        const exactResponse = await this.drive.files.list({
+          q: exactQuery,
+          fields: 'files(id, name)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true
+        });
+
+        if (exactResponse.data.files && exactResponse.data.files.length > 0) {
+          allResults = allResults.concat(exactResponse.data.files);
+        }
+      }
+
+      // Remove duplicates based on file ID
+      const uniqueResults = [];
+      const seenIds = new Set();
+      for (const file of allResults) {
+        if (!seenIds.has(file.id)) {
+          seenIds.add(file.id);
+          uniqueResults.push(file);
+        }
+      }
+
+      const exactResponse = { data: { files: uniqueResults } };
       
       // If exact search finds results, filter them to ensure they actually match properly
       if (exactResponse.data.files && exactResponse.data.files.length > 0) {
