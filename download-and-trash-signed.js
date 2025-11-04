@@ -185,21 +185,62 @@ class DocumentProcessor {
     }
   }
 
-  async moveToTrash(docId, fileName) {
+  async findOrCreateProcessedFolder(soapFolderId) {
     try {
-      console.log(`Moving ${fileName} to trash...`);
-      
+      // First check if "Processed" folder already exists
+      const searchResponse = await this.drive.files.list({
+        q: `name='Processed' and mimeType='application/vnd.google-apps.folder' and parents in '${soapFolderId}' and trashed=false`,
+        fields: 'files(id, name)'
+      });
+
+      if (searchResponse.data.files.length > 0) {
+        return searchResponse.data.files[0].id;
+      }
+
+      // Create the folder if it doesn't exist
+      console.log('Creating "Processed" folder...');
+      const createResponse = await this.drive.files.create({
+        requestBody: {
+          name: 'Processed',
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [soapFolderId]
+        },
+        fields: 'id'
+      });
+
+      console.log(`✅ Created "Processed" folder: ${createResponse.data.id}`);
+      return createResponse.data.id;
+
+    } catch (error) {
+      console.error('Error finding/creating Processed folder:', error.message);
+      throw error;
+    }
+  }
+
+  async moveToProcessedFolder(docId, fileName, processedFolderId) {
+    try {
+      console.log(`Moving ${fileName} to Processed folder...`);
+
+      // Get current parents
+      const file = await this.drive.files.get({
+        fileId: docId,
+        fields: 'parents'
+      });
+
+      const previousParents = file.data.parents ? file.data.parents.join(',') : '';
+
+      // Move file to Processed folder
       await this.drive.files.update({
         fileId: docId,
-        requestBody: {
-          trashed: true
-        }
+        addParents: processedFolderId,
+        removeParents: previousParents,
+        fields: 'id, parents'
       });
-      
-      console.log(`🗑️ Moved to trash: ${fileName}`);
-      
+
+      console.log(`📁 Moved to Processed folder: ${fileName}`);
+
     } catch (error) {
-      console.error(`Error moving ${fileName} to trash:`, error.message);
+      console.error(`Error moving ${fileName} to Processed folder:`, error.message);
       throw error;
     }
   }
@@ -207,43 +248,59 @@ class DocumentProcessor {
   async processSignedDocuments() {
     try {
       console.log('=== PROCESSING SIGNED DOCUMENTS ===');
-      
+
       // Find all signed documents
       const signedDocs = await this.findSignedDocuments();
-      
+
       if (signedDocs.length === 0) {
         console.log('No signed documents found');
         return;
       }
-      
+
+      // Find the soap notes folder
+      const folderResponse = await this.drive.files.list({
+        q: "name='soap notes for vets' and mimeType='application/vnd.google-apps.folder'",
+        fields: 'files(id, name)'
+      });
+
+      if (folderResponse.data.files.length === 0) {
+        throw new Error('SOAP notes for vets folder not found');
+      }
+
+      const soapFolderId = folderResponse.data.files[0].id;
+
+      // Find or create the Processed folder
+      const processedFolderId = await this.findOrCreateProcessedFolder(soapFolderId);
+      console.log(`Using Processed folder: ${processedFolderId}\n`);
+
       let downloaded = 0;
-      let trashed = 0;
+      let moved = 0;
       let errors = 0;
-      
+
       for (const doc of signedDocs) {
         try {
           console.log(`\n--- Processing: ${doc.name} ---`);
-          
+
           // Download as PDF
           await this.downloadDocumentAsPDF(doc.id, doc.name);
           downloaded++;
-          
-          // Move to trash
-          await this.moveToTrash(doc.id, doc.name);
-          trashed++;
-          
+
+          // Move to Processed folder
+          await this.moveToProcessedFolder(doc.id, doc.name, processedFolderId);
+          moved++;
+
           // Small delay between operations
           await new Promise(resolve => setTimeout(resolve, 1000));
-          
+
         } catch (error) {
           console.error(`❌ Error processing ${doc.name}: ${error.message}`);
           errors++;
         }
       }
-      
+
       console.log('\n=== PROCESSING COMPLETE ===');
       console.log(`📥 Downloaded: ${downloaded} PDFs`);
-      console.log(`🗑️ Moved to trash: ${trashed} documents`);
+      console.log(`📁 Moved to Processed folder: ${moved} documents`);
       console.log(`❌ Errors: ${errors}`);
       
       if (downloaded > 0) {

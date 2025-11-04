@@ -20,7 +20,7 @@ const THERAPIST_MAPPING = {
   'Paula': { name: 'Paula Reyes', npi: '1831950021', signature: 'Paula.png' },
   'PR': { name: 'Paula Reyes', npi: '1831950021', signature: 'Paula.png' },
   'paula': { name: 'Paula Reyes', npi: '1831950021', signature: 'Paula.png' },
-  'Brittany': { name: 'Brittany Coy', npi: '1477395093', signature: 'Brittany.jpeg' },
+  'Brittany': { name: 'Brittany Coy', npi: '1477395093', signature: 'brittany.jpeg' },
   'MM': { name: 'Marco Martinez', npi: '1750191185', signature: 'Marco.png' },
   'Marco': { name: 'Marco Martinez', npi: '1750191185', signature: 'Marco.png' },
   'RM': { name: 'Robert Martinez', npi: '1396554432', signature: 'Robert.png' },
